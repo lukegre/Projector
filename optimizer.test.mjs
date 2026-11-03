@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULTS, project } from './geometry.js';
-import { autoFit } from './optimizer.js';
+import { autoFit, idealFit } from './optimizer.js';
 import { digitalProjection } from './keystone.js';
 
 const near = (a, b, tolerance = 1e-6) => assert.ok(Math.abs(a - b) < tolerance, `${a} ≠ ${b}`);
@@ -124,4 +124,59 @@ test('digital fit improves panel usage when an existing corrected image already 
   near(existing.state.roll, 0);
   const repeat = autoFit(existing.state);
   assert.equal(repeat.changed, false);
+});
+
+test('ideal room baseline ignores hardware limits and has 100% panel usage', () => {
+  const input = { ...room, screenBottom: .6, lensHeight: 1.2, digitalKeystone: true,
+    shiftLimitX: 0, shiftLimitY: 0, limitMode: 'independent', throwMin: 4, throwMax: 5 };
+  const copy = structuredClone(input);
+  const fit = idealFit(input);
+  assert.deepEqual(input, copy);
+  assert.ok(fit.exact && fit.digital.fullScreen);
+  near(fit.digital.panelUsedPercent, 100);
+  near(fit.state.throwRatio, 4.6 / 1.5);
+  near(fit.state.shiftX, -40);
+  near(fit.state.shiftY, -21.1111111111111);
+  assert.equal(fit.state.throwMin, 4);
+  assert.equal(fit.state.shiftLimitX, 0);
+});
+
+test('ideal baseline uses largest native aspect rectangle for a different screen', () => {
+  const input = { ...room, screenAspectWidth: 21, screenAspectHeight: 9, fixedOffsetY: 12 };
+  const fit = idealFit(input);
+  const height = input.screenWidth * 9 / 21;
+  const width = height * 16 / 9;
+  near(fit.state.throwRatio, input.distance / width);
+  near(fit.state.shiftX, -input.offsetX / width * 100);
+  near(fit.state.shiftY, (input.screenBottom + height / 2 - input.lensHeight) / height * 100 - 12);
+  assert.ok(fit.exact && fit.digital.fullTarget && !fit.digital.fullScreen);
+  near(fit.digital.panelUsedPercent, 100);
+  assert.equal(idealFit({ ...input, screenWidth: 0 }).exact, false);
+});
+
+test('pose-only fit preserves optical settings and improves coverage', () => {
+  const input = { ...room, digitalKeystone: true, throwRatio: 2.5, shiftX: 0, shiftY: 0, fixedOffsetY: 3 };
+  const before = digitalProjection(input);
+  const fit = autoFit(input, { adjustableFields: ['yaw', 'pitch', 'roll'] });
+  assert.ok(fit.digital?.valid, fit.message);
+  assert.ok(!before.valid || fit.digital.screenCoveragePercent > before.screenCoveragePercent);
+  for (const key of ['throwRatio', 'shiftX', 'shiftY', 'fixedOffsetY']) assert.equal(fit.state[key], input[key]);
+});
+
+test('locked constrained optics reject inconsistent hardware and long throw cannot fill target', () => {
+  const options = { adjustableFields: ['yaw', 'pitch', 'roll'] };
+  for (const change of [
+    { throwRatio: 3, throwMin: 4 },
+    { shiftX: 11, shiftLimitX: 10, limitMode: 'independent' },
+    { shiftX: 8, shiftY: 8, shiftLimitX: 10, shiftLimitY: 10, limitMode: 'ellipse' },
+  ]) {
+    const input = { ...room, digitalKeystone: true, ...change };
+    const fit = autoFit(input, options);
+    assert.equal(fit.changed, false);
+    assert.deepEqual(fit.state, input);
+    assert.match(fit.message, /locked/i);
+  }
+  const longThrow = autoFit({ ...room, digitalKeystone: true, throwRatio: 10, shiftX: -40 }, options);
+  assert.equal(longThrow.exact, false);
+  assert.ok(!longThrow.digital || !longThrow.digital.fullTarget);
 });

@@ -40,18 +40,18 @@
             INTERACTIVE SIMULATOR
           </div>
           <h2>
-            Find the right angle.
+            Start with your room.
           </h2>
           <p>
-            Explore how projector position, lens shift and orientation change the image on your wall.
+            Set the screen and projector location, find ideal conditions, then test your projector’s optics.
           </p>
         </div>
         <div class="intro-note">
           <strong>
-            Start with your room
+            Begin with a perfect fit
           </strong>
           <span>
-            Adjust the values below to match your setup. The diagram and measurements update together.
+            Adjust the projector optics to see the digital correction required.
           </span>
         </div>
       </section>
@@ -72,11 +72,6 @@
                 ↺
               </span>
             </button>
-          </div>
-          <div class="fit-box">
-            <button id="auto-fit" class="fit-button" type="button">Auto-fit to screen <span aria-hidden="true">↗</span></button>
-            <p class="fit-help">Adjust optics and aim to match the screen. Projector position stays fixed.</p>
-            <p id="fit-status" class="fit-status" role="status" aria-live="polite"></p>
           </div>
           <div class="preset-row">
             <label for="preset">
@@ -167,6 +162,7 @@
                 </button>
               </div>
             </div>
+            <div id="live-outcome" class="live-outcome" aria-live="polite"></div>
             <div class="canvas-wrap">
               <canvas id="scene" tabindex="0" aria-label="Projector, screen and projected image diagram. Drag or use arrow keys to orbit in 3D view. Use plus and minus to zoom, and zero to reset the camera. Front, top and side views are available above.">
               </canvas>

@@ -2,50 +2,51 @@ import {
   DEFAULTS, project, projectUV, basis
 }
 from './geometry.js';
-import { autoFit } from './optimizer.js';
+import { autoFit, idealFit } from './optimizer.js';
 import { digitalProjection } from './keystone.js';
 const $ = s => document.querySelector(s);
 const clone = obj => JSON.parse(JSON.stringify(obj));
 const room = {
-  ...DEFAULTS, digitalKeystone:false, throwMin:null, throwMax:null, distance:4.6, screenWidth:1.5, screenBottom:.6, ceilingHeight:2.5, aspectWidth:16, aspectHeight:9, screenAspectWidth:16, screenAspectHeight:9, throwRatio:4.6/1.5, lensHeight:1.2, offsetX:.6
+  ...DEFAULTS, digitalKeystone:true, throwMin:null, throwMax:null, distance:4.6, screenWidth:1.5, screenBottom:.6, ceilingHeight:2.5, aspectWidth:16, aspectHeight:9, screenAspectWidth:16, screenAspectHeight:9, throwRatio:4.6/1.5, lensHeight:1.2, offsetX:.6
 };
+const adjustableFields = ['throwRatio', 'shiftX', 'shiftY', 'yaw', 'pitch', 'roll'];
+function idealState(input) {
+  const fit = idealFit(input);
+  return fit && Number.isFinite(fit.rmsError) ? fit.state : input;
+}
 const presets = {
-  room, center: {
-    ...room,offsetX:0,lensHeight:1.021875,yaw:0,pitch:0,roll:0,shiftX:0,shiftY:0,fixedOffsetY:0
-  }, offaxis: {
-    ...room,offsetX:.8,lensHeight:1.05,yaw:-8,pitch:3,roll:2,shiftX:8,shiftY:12
-  }
+  room: idealState(room),
+  center: idealState({ ...room, offsetX:0, lensHeight:1.021875 }),
+  offaxis: idealState({ ...room, offsetX:.8, lensHeight:1.05 })
 };
-let state=clone(room), currentView='orbit', zoom=1, azimuth=.68, elevation=.4, result, digital;
-const groups=[ {
-  title:'Optics',icon:'◉',hint:'LENS',fields:[
-    ['throwRatio','Throw ratio',.3,6,.01,' : 1','Distance ÷ nominal image width.'],
-    ['aspect','Native aspect ratio']
-  ]
-}, {
-  title:'Projector position',icon:'⌖',hint:'METRES',fields:[
-    ['distance','Lens-to-wall distance',.2,15,.01,'m','Perpendicular distance to the screen wall.'],
-    ['offsetX','Sideways position',-5,5,.01,'m','Positive is right, looking towards the screen.'],
-    ['lensHeight','Lens height',0,5,.01,'m','Measured from the floor.']
-  ]
-}, {
-  title:'Aim & lens shift',icon:'↗',hint:'DEGREES / %',fields:[
-    ['yaw','Yaw — left/right aim',-45,45,.1,'°','Positive turns right.'],
-    ['pitch','Pitch — up/down tilt',-45,45,.1,'°','Positive tilts up.'],
-    ['roll','Roll',-45,45,.1,'°','Positive rotates clockwise.'],
-    ['shiftX','Horizontal shift',-150,150,.1,'%','Positive moves the image right.'],
-    ['shiftY','Vertical shift',-150,150,.1,'%','Positive moves the image up.'],
-    ['fixedOffsetY','Fixed vertical optical offset',-150,150,.1,'%','Added to vertical shift, as a percentage of full image height.']
-  ]
-}, {
-  title:'Screen & room',icon:'▱',hint:'METRES',fields:[
+let projectorAspectChosen = false;
+let state=clone(presets.room), currentView='orbit', zoom=1, azimuth=.68, elevation=.4, result, digital;
+const groups = [
+  { title:'Room & screen', icon:'1', hint:'METRES', fields:[
     ['screenWidth','Screen width',.2,8,.01,'m'],
     ['screenAspect','Screen aspect ratio'],
     ['screenBottom','Screen bottom',0,4,.01,'m','Height above floor.'],
-    ['ceilingHeight','Ceiling height',1,8,.01,'m'],
-    ['roomWidth','Room width',1,15,.01,'m','Adjustable example; not measured.']
-  ]
-} ];
+    ['roomWidth','Room width',1,15,.01,'m','Adjustable example; not measured.'],
+    ['ceilingHeight','Ceiling height',1,8,.01,'m']
+  ]},
+  { title:'Projector location', icon:'2', hint:'METRES', fields:[
+    ['distance','Lens-to-wall distance',.2,15,.01,'m','Perpendicular distance to the screen wall.'],
+    ['offsetX','Sideways position',-5,5,.01,'m','Positive is right, looking towards the screen.'],
+    ['lensHeight','Lens height',0,5,.01,'m','Measured from the floor.']
+  ]},
+  { title:'Your projector', icon:'3', hint:'OPTICS', fields:[
+    ['aspect','Native aspect ratio'],
+    ['throwRatio','Throw ratio',.3,6,.01,' : 1','Distance ÷ nominal image width.'],
+    ['shiftX','Horizontal shift',-150,150,.1,'%','Positive moves the image right.'],
+    ['shiftY','Vertical shift',-150,150,.1,'%','Positive moves the image up.'],
+    ['fixedOffsetY','Fixed vertical optical offset',-150,150,.1,'%','Added to vertical shift, as a percentage of full image height.']
+  ]},
+  { title:'Correction', icon:'4', hint:'AIM / DIGITAL', fields:[
+    ['yaw','Yaw — left/right aim',-45,45,.1,'°','Positive turns right.'],
+    ['pitch','Pitch — up/down tilt',-45,45,.1,'°','Positive tilts up.'],
+    ['roll','Roll',-45,45,.1,'°','Positive rotates clockwise.']
+  ]}
+];
 function ratio(prefix,label) {
   let aw=prefix==='aspect'?'aspectWidth':'screenAspectWidth', ah=prefix==='aspect'?'aspectHeight':'screenAspectHeight';
   return `<div class="ratio-row">
@@ -74,30 +75,33 @@ function field([key,label,min,max,step,unit,help]) {
       </div>
       <input type="range" min="${min}" max="${max}" step="${step}" data-range="${key}" aria-label="${label} slider">${help?`<div class="field-help">${help}</div>`:''}</div>`
 }
-$('#controls').innerHTML=groups.map(g=>`<section class="control-group">
-      <div class="group-title">
-      <span class="group-icon">${g.icon}</span>
-      <h4>${g.title}</h4>
-      <small>${g.hint}</small>
-      </div>${g.title==='Aim & lens shift'?`<label class="digital-toggle"><input type="checkbox" data-key="digitalKeystone"><span><strong>Digital keystone correction</strong><small>Show an ideal corrected image inside the optical light footprint.</small></span></label>`:''}${g.title==='Aim & lens shift'?'<p class="shift-explainer">Shifts are percentages of the full image width or height: 50% moves the image by half that dimension. The fixed vertical optical offset is added to vertical shift.</p>':''}${g.fields.map(field).join('')}${g.title==='Optics'?`<details class="zoom-range">
-      <summary>Optional manufacturer zoom range</summary>
-      <p>Optional manufacturer zoom range; leave blank if unknown.</p>
-      <div class="zoom-fields">
-        <label>Minimum throw ratio<input type="number" data-key="throwMin" min="0.001" step="any" placeholder="Unknown"></label>
-        <label>Maximum throw ratio<input type="number" data-key="throwMax" min="0.001" step="any" placeholder="Unknown"></label>
-      </div>
-      </details>`:''}</section>`).join('')+`<details class="advanced">
-      <summary>Advanced shift limits <span>+</span>
-      </summary>
-      <p>Optional limits apply to adjustable lens shift only. The ellipse is an approximation, not a manufacturer validation.</p>
-      <div class="select-field">
-      <label for="limitMode">Limit mode</label>
-      <select id="limitMode" data-key="limitMode">
-      <option value="none">None</option>
-      <option value="independent">Independent</option>
-      <option value="ellipse">Ellipse (approx.)</option>
-      </select>
-      </div>${field(['shiftLimitX','Maximum horizontal shift',0,150,.1,'%','Leave blank if unknown.'])}${field(['shiftLimitY','Maximum vertical shift',0,150,.1,'%','Leave blank if unknown.'])}</details>`;
+const zoomLimits = `<details class="zoom-range">
+  <summary>Optional manufacturer zoom range</summary>
+  <p>Optional manufacturer zoom range; leave blank if unknown.</p>
+  <div class="zoom-fields">
+    <label>Minimum throw ratio<input type="number" data-key="throwMin" min="0.001" step="any" placeholder="Unknown"></label>
+    <label>Maximum throw ratio<input type="number" data-key="throwMax" min="0.001" step="any" placeholder="Unknown"></label>
+  </div></details>`;
+const shiftLimits = `<details class="advanced">
+  <summary>Advanced shift limits <span>+</span></summary>
+  <p>Optional limits apply to adjustable lens shift only. The ellipse is an approximation, not a manufacturer validation.</p>
+  <div class="select-field"><label for="limitMode">Limit mode</label><select id="limitMode" data-key="limitMode">
+  <option value="none">None</option><option value="independent">Independent</option><option value="ellipse">Ellipse (approx.)</option></select></div>
+  ${field(['shiftLimitX','Maximum horizontal shift',0,150,.1,'%','Leave blank if unknown.'])}
+  ${field(['shiftLimitY','Maximum vertical shift',0,150,.1,'%','Leave blank if unknown.'])}</details>`;
+const idealBox = `<div class="fit-box">
+  <button id="find-ideal" class="fit-button" type="button">Find ideal conditions <span aria-hidden="true">↗</span></button>
+  <p class="fit-help">Square-on requirements ignore manufacturer limits. Until a projector aspect is chosen, it is assumed to match the screen.</p>
+  <div id="ideal-requirements" class="ideal-requirements" aria-live="polite"></div>
+  <p id="ideal-status" class="fit-status" role="status" aria-live="polite"></p>
+  </div>`;
+$('#controls').innerHTML = groups.map(g => `<section class="control-group">
+  <div class="group-title"><span class="group-icon">${g.icon}</span><h4>${g.title}</h4><small>${g.hint}</small></div>
+  ${g.title === 'Your projector' ? '<p class="shift-explainer">Shifts are percentages of the full image width or height: 50% moves the image by half that dimension. The fixed vertical optical offset is added to vertical shift.</p>' : ''}
+  ${g.fields.map(field).join('')}
+  ${g.title === 'Your projector' ? `${zoomLimits}${shiftLimits}<button id="auto-fit" class="secondary fit-limits" type="button">Fit within projector limits</button><p class="fit-help">May adjust the optics and aim within the declared limits.</p><p id="fit-status" class="fit-status" role="status" aria-live="polite"></p>` : ''}
+  ${g.title === 'Correction' ? `<label class="digital-toggle"><input type="checkbox" data-key="digitalKeystone"><span><strong>Digital keystone correction</strong><small>Show an ideal corrected image inside the optical light footprint.</small></span></label><p class="fit-help">Auto-aim keeps the chosen optics; if the light cannot cover the screen, digital correction cannot fill the gap.</p><p id="aim-status" class="fit-status" role="status" aria-live="polite"></p>` : ''}
+  </section>${g.title === 'Projector location' ? idealBox : ''}`).join('');
 function sync() {
   document.querySelectorAll('[data-key]').forEach(el=> {
     if(el===document.activeElement&&el.tagName==='INPUT'&&el.type!=='checkbox')return;
@@ -117,12 +121,14 @@ let setupRevision = 0;
 function update() {
   setupRevision++;
   $('#fit-status').textContent = '';
+  $('#ideal-status').textContent = '';
   // A manual-copy fallback must never look current after the setup changes.
   $('#specs-fallback').hidden = true;
   $('#specs-status').textContent = '';
   try {
     result=project(state);
     digital=digitalProjection(state, result);
+    renderIdeal();
     renderResults();
     draw()
   }catch(e) {
@@ -133,6 +139,9 @@ function update() {
 document.querySelector('#controls').addEventListener('input',e=> {
   const el=e.target,key=el.dataset.key||el.dataset.range;
   if(!key)return;
+  clearTimeout(aimTimer);
+  if (result) renderResults();
+  $('#aim-status').textContent = '';
   setupRevision++;
   $('#fit-status').textContent = '';
   if(key==='digitalKeystone')state[key]=el.checked;
@@ -147,8 +156,10 @@ document.querySelector('#controls').addEventListener('input',e=> {
       state[key]=n
     }
   }
+  if (key === 'aspectWidth' || key === 'aspectHeight') projectorAspectChosen = true;
   sync();
-  update()
+  update();
+  if (['throwRatio','shiftX','shiftY','fixedOffsetY','aspectWidth','aspectHeight'].includes(key)) scheduleAim();
 });
 $('#controls').addEventListener('click',e=> {
   let b=e.target.closest('[data-ratio]');
@@ -156,11 +167,17 @@ $('#controls').addEventListener('click',e=> {
   let prefix=b.dataset.ratio==='aspect'?'aspect':'screenAspect';
   state[prefix+'Width']=Number(b.dataset.w);
   state[prefix+'Height']=Number(b.dataset.h);
+  if (prefix === 'aspect') projectorAspectChosen = true;
+  clearTimeout(aimTimer);
   sync();
-  update()
+  update();
+  if (prefix === 'aspect') scheduleAim()
 });
 function setPreset(name) {
+  clearTimeout(aimTimer);
+  $('#aim-status').textContent = '';
   state=clone(presets[name]);
+  projectorAspectChosen = false;
   $('#preset').value=name;
   sync();
   update()
@@ -199,6 +216,9 @@ $('#save').onclick=()=> {
   }
 };
 $('#load').onclick=()=> {
+  clearTimeout(aimTimer);
+  if (result) renderResults();
+  $('#aim-status').textContent = '';
   $('#fit-status').textContent = '';
   try {
     let value=localStorage.getItem('projector-simulator-v1');
@@ -208,6 +228,7 @@ $('#load').onclick=()=> {
       return
     }
     state=parsed;
+    projectorAspectChosen = true;
     sync();
     update();
     status('Saved setup loaded.')
@@ -225,8 +246,68 @@ $('#share').onclick=async()=> {
     status('Could not copy the link; clipboard access may be unavailable.')
   }
 };
+let aimTimer;
+function idealInput() {
+  return projectorAspectChosen ? state : { ...state, aspectWidth:state.screenAspectWidth, aspectHeight:state.screenAspectHeight };
+}
+function renderIdeal() {
+  const fit = idealFit(idealInput());
+  const box = $('#ideal-requirements');
+  if (!fit || !Number.isFinite(fit.rmsError)) {
+    box.textContent = fit?.message || 'Enter valid room dimensions to see ideal requirements.';
+    return;
+  }
+  const n = value => Number(value.toFixed(2));
+  box.textContent = `Ideal requirements: throw ${n(fit.state.throwRatio)}:1 · shift H ${n(fit.state.shiftX)}% · V ${n(fit.state.shiftY)}%`;
+}
+$('#find-ideal').addEventListener('click', () => {
+  clearTimeout(aimTimer);
+  if (result) renderResults();
+  $('#aim-status').textContent = '';
+  const fit = idealFit(idealInput());
+  if (!fit || !Number.isFinite(fit.rmsError)) {
+    $('#ideal-status').textContent = fit?.message || 'Could not calculate ideal conditions.';
+    return;
+  }
+  if (!projectorAspectChosen) {
+    state.aspectWidth = state.screenAspectWidth;
+    state.aspectHeight = state.screenAspectHeight;
+  }
+  for (const key of adjustableFields) state[key] = fit.state[key];
+  sync();
+  update();
+  $('#ideal-status').textContent = fit.exact ? 'Ideal conditions applied.' : fit.message;
+});
+function scheduleAim() {
+  const revision = setupRevision;
+  $('#aim-status').textContent = 'Finding the best aim…';
+  $('#live-outcome').textContent = 'Updating aim and digital correction…';
+  aimTimer = setTimeout(() => {
+    if (revision !== setupRevision) return;
+    try {
+      const fit = autoFit(clone(state), { adjustableFields:['yaw','pitch','roll'] });
+      if (!fit || !Number.isFinite(fit.rmsError)) {
+        $('#aim-status').textContent = fit?.message || 'Could not auto-aim with these settings.';
+        renderResults();
+        return;
+      }
+      for (const key of ['yaw','pitch','roll']) state[key] = fit.state[key];
+      sync();
+      update();
+      $('#aim-status').textContent = 'Aim updated for the chosen optics.';
+    } catch (error) {
+      console.error(error);
+      $('#aim-status').textContent = 'Could not auto-aim; the chosen optics are unchanged.';
+      renderResults();
+    }
+  }, 125);
+}
+
 // Yield once so the progress message is visible before the numerical solve.
 $('#auto-fit').addEventListener('click', async () => {
+  clearTimeout(aimTimer);
+  if (result) renderResults();
+  $('#aim-status').textContent = '';
   const button = $('#auto-fit');
   const fitStatus = $('#fit-status');
   const revision = setupRevision;
@@ -243,7 +324,7 @@ $('#auto-fit').addEventListener('click', async () => {
       fitStatus.textContent = fit?.message || 'Could not fit this setup. Check the input values.';
       return;
     }
-    const adjustable = ['throwRatio', 'shiftX', 'shiftY', 'yaw', 'pitch', 'roll'];
+    const adjustable = adjustableFields;
     if (adjustable.some(key => !Number.isFinite(fit.state[key]))) {
       throw new Error('Solver returned an invalid setting');
     }
@@ -327,7 +408,7 @@ $('#copy-specs').addEventListener('click', async () => {
 try {
   if(location.hash.startsWith('#setup=')) {
     let loaded=validate(JSON.parse(decodeURIComponent(location.hash.slice(7))));
-    if(loaded)state=loaded;
+    if(loaded) { state=loaded; projectorAspectChosen=true; }
     else status('The link contains an invalid setup.')
   }
 }catch {
@@ -371,6 +452,14 @@ function renderResults() {
       <td>${fmt(r.corners?.[i]?.[0])} m</td>
       <td>${fmt(r.corners?.[i]?.[1])} m</td>
       </tr>`).join('');
+  const live = $('#live-outcome');
+  if (state.digitalKeystone) {
+    live.textContent = digital?.valid && digital.fullScreen
+      ? `Screen filled · ${fmt(digital.unusedPanelPercent,1)}% panel area unused`
+      : `Cannot fill screen with these optics${digital?.valid ? ` · ${fmt(digital.unusedPanelPercent,1)}% panel area unused` : ''}`;
+  } else {
+    live.textContent = 'Digital correction off · optical footprint shown';
+  }
   const digitalBox = $('#digital-results');
   digitalBox.hidden = !state.digitalKeystone;
   if (state.digitalKeystone) {
