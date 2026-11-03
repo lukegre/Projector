@@ -1,0 +1,10 @@
+{
+  "name": "projector-placement-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-free projector placement and geometry simulator",
+  "scripts": {
+    "test": "node --test geometry.test.mjs"
+  }
+}

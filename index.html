@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f3ee">
+    <meta name="description" content="Explore projector placement and the shape of a projected image.">
+    <title>
+      Projector placement simulator
+    </title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand-mark" aria-hidden="true">
+        <span>
+        </span>
+      </div>
+      <div>
+        <div class="eyebrow">
+          A ROOM PLANNING TOOL
+        </div>
+        <h1>
+          Projector placement simulator
+        </h1>
+      </div>
+      <div class="header-note">
+        Geometry, made visible
+        <span>
+          ↗
+        </span>
+      </div>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <div class="section-kicker">
+            <span class="dot">
+            </span>
+            INTERACTIVE SIMULATOR
+          </div>
+          <h2>
+            Find the right angle.
+          </h2>
+          <p>
+            Explore how projector position, lens shift and orientation change the image on your wall.
+          </p>
+        </div>
+        <div class="intro-note">
+          <strong>
+            Start with your room
+          </strong>
+          <span>
+            Adjust the values below to match your setup. The diagram and measurements update together.
+          </span>
+        </div>
+      </section>
+      <div class="workspace">
+        <aside class="controls-panel" aria-label="Projector and room controls">
+          <div class="panel-heading">
+            <div>
+              <span class="overline">
+                01 / SETUP
+              </span>
+              <h3>
+                Your setup
+              </h3>
+            </div>
+            <button id="reset" class="text-button">
+              Reset
+              <span>
+                ↺
+              </span>
+            </button>
+          </div>
+          <div class="preset-row">
+            <label for="preset">
+              Starting point
+            </label>
+            <select id="preset">
+              <option value="room">
+                Your room
+              </option>
+              <option value="center">
+                Centred baseline
+              </option>
+              <option value="offaxis">
+                Off-axis demo
+              </option>
+            </select>
+          </div>
+          <p class="preset-note">
+            Your room uses your supplied dimensions. Lens height, sideways position and room width are adjustable examples, not measurements.
+          </p>
+          <div id="controls">
+          </div>
+          <div class="save-box">
+            <div>
+              <strong>
+                Keep your setup
+              </strong>
+              <p>
+                Save locally in this browser or copy a shareable link.
+              </p>
+            </div>
+            <div class="button-row">
+              <button id="save" class="secondary">
+                Save
+              </button>
+              <button id="load" class="secondary">
+                Load
+              </button>
+              <button id="share" class="secondary">
+                Copy link
+              </button>
+            </div>
+            <div id="save-status" role="status" aria-live="polite">
+            </div>
+          </div>
+        </aside>
+        <section class="visual-column">
+          <div class="scene-card">
+            <div class="scene-heading">
+              <div>
+                <span class="overline">
+                  02 / VISUALISE
+                </span>
+                <h3>
+                  See the projection
+                </h3>
+              </div>
+              <div class="live-badge">
+                <span>
+                </span>
+                LIVE VIEW
+              </div>
+            </div>
+            <div class="view-bar" role="group" aria-label="Camera view">
+              <div class="view-tabs">
+                <button class="view active" data-view="orbit" aria-pressed="true">
+                  3D view
+                </button>
+                <button class="view" data-view="front" aria-pressed="false">
+                  Front
+                </button>
+                <button class="view" data-view="top" aria-pressed="false">
+                  Top
+                </button>
+                <button class="view" data-view="side" aria-pressed="false">
+                  Side
+                </button>
+              </div>
+              <div class="camera-actions">
+                <button id="zoom-out" aria-label="Zoom out">
+                  −
+                </button>
+                <button id="zoom-in" aria-label="Zoom in">
+                  +
+                </button>
+                <button id="reset-camera" title="Reset camera" aria-label="Reset camera">
+                  ↺
+                </button>
+              </div>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="scene" tabindex="0" aria-label="Projector, screen and projected image diagram. Drag or use arrow keys to orbit in 3D view. Use plus and minus to zoom, and zero to reset the camera. Front, top and side views are available above.">
+              </canvas>
+              <div class="canvas-overlay">
+                <span class="legend-item">
+                  <i class="teal">
+                  </i>
+                  Screen
+                </span>
+                <span class="legend-item">
+                  <i class="orange">
+                  </i>
+                  Projected image
+                </span>
+              </div>
+              <div class="view-hint" id="view-hint">
+                DRAG OR USE ARROWS TO ORBIT
+                <span>
+                  ·
+                </span>
+                SCROLL TO ZOOM
+              </div>
+            </div>
+            <div class="scene-footer">
+              <span>
+                <span class="axis-dot">
+                </span>
+                Wall at z = 0
+              </span>
+              <span id="scene-status">
+                Ideal geometric projection
+              </span>
+            </div>
+          </div>
+          <div class="results-card">
+            <div class="results-heading">
+              <div>
+                <span class="overline">
+                  03 / MEASURE
+                </span>
+                <h3>
+                  What lands on the wall
+                </h3>
+              </div>
+              <span class="units-tag">
+                METRES / INCHES
+              </span>
+            </div>
+            <div id="warnings" aria-live="polite">
+            </div>
+            <div class="metrics" id="metrics">
+            </div>
+            <div class="result-columns">
+              <div>
+                <div class="subheading">
+                  <h4>
+                    On-wall dimensions
+                  </h4>
+                  <span>
+                    ACTUAL
+                  </span>
+                </div>
+                <div id="dimensions" class="data-list">
+                </div>
+              </div>
+              <div>
+                <div class="subheading">
+                  <h4>
+                    Image
+                    &amp;
+                    screen
+                  </h4>
+                  <span>
+                    OVERLAP
+                  </span>
+                </div>
+                <div id="coverage" class="coverage">
+                </div>
+              </div>
+            </div>
+            <details class="corner-details">
+              <summary>
+                View projected corner coordinates
+                <span>
+                  +
+                </span>
+              </summary>
+              <p>
+                Metres, relative to the wall centre at floor level. Positive x is to the right; y is height above the floor.
+              </p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        Corner
+                      </th>
+                      <th>
+                        X position
+                      </th>
+                      <th>
+                        Height
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody id="corners">
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+          <div class="footnote">
+            <span>
+              ✳
+            </span>
+            <p>
+              <strong>
+                A useful starting point, not a specification.
+              </strong>
+              This is ideal ray geometry. It does not model focus, brightness, lens distortion, physical clearance or manufacturer-specific shift limits. Verify with your projector’s documentation before installing.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+    <footer>
+      <span>
+        PROJECTOR PLACEMENT SIMULATOR
+      </span>
+      <span>
+        Made for a clearer picture.
+      </span>
+    </footer>
+    <script type="module" src="app.js">
+    </script>
+  </body>
+</html>
