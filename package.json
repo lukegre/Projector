@@ -5,6 +5,6 @@
   "type": "module",
   "description": "Dependency-free projector placement and geometry simulator",
   "scripts": {
-    "test": "node --test geometry.test.mjs"
+    "test": "node --test geometry.test.mjs keystone.test.mjs optimizer.test.mjs"
   }
 }

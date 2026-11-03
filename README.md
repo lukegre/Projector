@@ -37,8 +37,12 @@ build process. Publishing is optional; running locally needs no GitHub account.
 
 ## Using the simulator
 
+Auto-fit to screen keeps the lens position and screen fixed while adjusting throw ratio, adjustable horizontal and vertical shift, and aim. Enter optional minimum and maximum throw ratios and lens-shift limits to constrain the search; without known manufacturer limits the result is a geometric fit, not confirmation that a projector can achieve it. When an exact fit is not found, the tool reports the best fit it found and its corner errors.
+
 Set the optical throw ratio and native aspect ratio, the lens position, aim and shift, and the screen and room dimensions. Positive sideways position and yaw are to the right looking at the wall; positive pitch is up, and positive roll is clockwise. Shift values and fixed vertical offset are percentages of the full image dimension. The fixed offset is added to adjustable vertical shift.
 
-Drag the 3D scene to orbit, use the wheel or pinch to zoom, and select front, top or side for orthographic views. Keyboard-accessible controls provide view selection and zoom. Focus the scene and use the arrow keys to orbit, plus or minus to zoom, and 0 to reset the camera. Save stores a setup locally in the browser; Copy link creates a shareable URL containing the setup.
+Drag the 3D scene to orbit, use the wheel or pinch to zoom, and select front, top or side for orthographic views. Keyboard-accessible controls provide view selection and zoom. Focus the scene and use the arrow keys to orbit, plus or minus to zoom, and 0 to reset the camera. Save stores a setup locally in the browser; Copy link creates a shareable URL containing the setup. Copy projector specs provides a labelled summary of the current optical settings for shopping, with a selectable fallback if clipboard access is unavailable.
+
+Optional digital keystone correction shows an ideal native-aspect rectangular prewarp inside the raw optical light footprint, together with panel area used, unused area and maximum horizontal and vertical corner displacement. Digital auto-fit targets the largest native-aspect rectangle within the screen. This is a generic model and does not establish a projector’s digital correction capabilities or resolution loss.
 
 The model uses ideal ray geometry. It does not simulate focus, brightness, lens distortion, physical clearance or any specific manufacturer's optical design. The optional elliptical shift limit is an approximation and is not a validation of a manufacturer's shift range. Check projector documentation and verify measurements before installing. See `GEOMETRY.md` for coordinate and model details.

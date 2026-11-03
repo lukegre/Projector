@@ -73,6 +73,11 @@
               </span>
             </button>
           </div>
+          <div class="fit-box">
+            <button id="auto-fit" class="fit-button" type="button">Auto-fit to screen <span aria-hidden="true">↗</span></button>
+            <p class="fit-help">Adjust optics and aim to match the screen. Projector position stays fixed.</p>
+            <p id="fit-status" class="fit-status" role="status" aria-live="polite"></p>
+          </div>
           <div class="preset-row">
             <label for="preset">
               Starting point
@@ -174,7 +179,11 @@
                 <span class="legend-item">
                   <i class="orange">
                   </i>
-                  Projected image
+                  Optical light footprint
+                </span>
+                <span class="legend-item">
+                  <i class="purple"></i>
+                  Corrected image
                 </span>
               </div>
               <div class="view-hint" id="view-hint">
@@ -206,19 +215,29 @@
                   What lands on the wall
                 </h3>
               </div>
-              <span class="units-tag">
-                METRES / INCHES
-              </span>
+              <button id="copy-specs" class="copy-specs" type="button">Copy projector specs</button>
+            </div>
+            <div class="specs-feedback">
+              <p id="specs-status" role="status" aria-live="polite"></p>
+              <div id="specs-fallback" hidden>
+                <label for="specs-text">Select and copy these settings:</label>
+                <textarea id="specs-text" readonly rows="9" spellcheck="false"></textarea>
+              </div>
             </div>
             <div id="warnings" aria-live="polite">
             </div>
             <div class="metrics" id="metrics">
             </div>
+            <section id="digital-results" class="digital-results" hidden aria-label="Digital correction results">
+              <div class="subheading"><h4>Digital correction</h4><span>IDEAL MODEL</span></div>
+              <p class="digital-note">Panel warp is the maximum corner displacement as a percentage of full panel width or height. Panel area used is not a measure of resolution loss. Actual device limits may differ.</p>
+              <div id="digital-data"></div>
+            </section>
             <div class="result-columns">
               <div>
                 <div class="subheading">
                   <h4>
-                    On-wall dimensions
+                    Optical footprint dimensions
                   </h4>
                   <span>
                     ACTUAL
@@ -230,9 +249,7 @@
               <div>
                 <div class="subheading">
                   <h4>
-                    Image
-                    &amp;
-                    screen
+                    Optical footprint overlap
                   </h4>
                   <span>
                     OVERLAP
@@ -244,7 +261,7 @@
             </div>
             <details class="corner-details">
               <summary>
-                View projected corner coordinates
+                View optical footprint corners
                 <span>
                   +
                 </span>

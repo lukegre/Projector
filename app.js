@@ -2,10 +2,12 @@ import {
   DEFAULTS, project, projectUV, basis
 }
 from './geometry.js';
+import { autoFit } from './optimizer.js';
+import { digitalProjection } from './keystone.js';
 const $ = s => document.querySelector(s);
 const clone = obj => JSON.parse(JSON.stringify(obj));
 const room = {
-  ...DEFAULTS, distance:4.6, screenWidth:1.5, screenBottom:.6, ceilingHeight:2.5, aspectWidth:16, aspectHeight:9, screenAspectWidth:16, screenAspectHeight:9, throwRatio:4.6/1.5, lensHeight:1.2, offsetX:.6
+  ...DEFAULTS, digitalKeystone:false, throwMin:null, throwMax:null, distance:4.6, screenWidth:1.5, screenBottom:.6, ceilingHeight:2.5, aspectWidth:16, aspectHeight:9, screenAspectWidth:16, screenAspectHeight:9, throwRatio:4.6/1.5, lensHeight:1.2, offsetX:.6
 };
 const presets = {
   room, center: {
@@ -14,7 +16,7 @@ const presets = {
     ...room,offsetX:.8,lensHeight:1.05,yaw:-8,pitch:3,roll:2,shiftX:8,shiftY:12
   }
 };
-let state=clone(room), currentView='orbit', zoom=1, azimuth=.68, elevation=.4, result;
+let state=clone(room), currentView='orbit', zoom=1, azimuth=.68, elevation=.4, result, digital;
 const groups=[ {
   title:'Optics',icon:'◉',hint:'LENS',fields:[
     ['throwRatio','Throw ratio',.3,6,.01,' : 1','Distance ÷ nominal image width.'],
@@ -28,8 +30,8 @@ const groups=[ {
   ]
 }, {
   title:'Aim & lens shift',icon:'↗',hint:'DEGREES / %',fields:[
-    ['yaw','Yaw',-45,45,.1,'°','Positive turns right.'],
-    ['pitch','Pitch',-45,45,.1,'°','Positive tilts up.'],
+    ['yaw','Yaw — left/right aim',-45,45,.1,'°','Positive turns right.'],
+    ['pitch','Pitch — up/down tilt',-45,45,.1,'°','Positive tilts up.'],
     ['roll','Roll',-45,45,.1,'°','Positive rotates clockwise.'],
     ['shiftX','Horizontal shift',-150,150,.1,'%','Positive moves the image right.'],
     ['shiftY','Vertical shift',-150,150,.1,'%','Positive moves the image up.'],
@@ -77,7 +79,14 @@ $('#controls').innerHTML=groups.map(g=>`<section class="control-group">
       <span class="group-icon">${g.icon}</span>
       <h4>${g.title}</h4>
       <small>${g.hint}</small>
-      </div>${g.title==='Aim & lens shift'?'<p class="shift-explainer">Shifts are percentages of the full image width or height: 50% moves the image by half that dimension. The fixed vertical optical offset is added to vertical shift.</p>':''}${g.fields.map(field).join('')}</section>`).join('')+`<details class="advanced">
+      </div>${g.title==='Aim & lens shift'?`<label class="digital-toggle"><input type="checkbox" data-key="digitalKeystone"><span><strong>Digital keystone correction</strong><small>Show an ideal corrected image inside the optical light footprint.</small></span></label>`:''}${g.title==='Aim & lens shift'?'<p class="shift-explainer">Shifts are percentages of the full image width or height: 50% moves the image by half that dimension. The fixed vertical optical offset is added to vertical shift.</p>':''}${g.fields.map(field).join('')}${g.title==='Optics'?`<details class="zoom-range">
+      <summary>Optional manufacturer zoom range</summary>
+      <p>Optional manufacturer zoom range; leave blank if unknown.</p>
+      <div class="zoom-fields">
+        <label>Minimum throw ratio<input type="number" data-key="throwMin" min="0.001" step="any" placeholder="Unknown"></label>
+        <label>Maximum throw ratio<input type="number" data-key="throwMax" min="0.001" step="any" placeholder="Unknown"></label>
+      </div>
+      </details>`:''}</section>`).join('')+`<details class="advanced">
       <summary>Advanced shift limits <span>+</span>
       </summary>
       <p>Optional limits apply to adjustable lens shift only. The ellipse is an approximation, not a manufacturer validation.</p>
@@ -91,8 +100,9 @@ $('#controls').innerHTML=groups.map(g=>`<section class="control-group">
       </div>${field(['shiftLimitX','Maximum horizontal shift',0,150,.1,'%','Leave blank if unknown.'])}${field(['shiftLimitY','Maximum vertical shift',0,150,.1,'%','Leave blank if unknown.'])}</details>`;
 function sync() {
   document.querySelectorAll('[data-key]').forEach(el=> {
-    if(el===document.activeElement&&el.tagName==='INPUT')return;
+    if(el===document.activeElement&&el.tagName==='INPUT'&&el.type!=='checkbox')return;
     let v=state[el.dataset.key];
+    if(el.type==='checkbox') { el.checked=Boolean(v); return; }
     el.value=v==null?'':(typeof v==='number'?Number(v.toFixed(6)):v)
   });
   document.querySelectorAll('[data-range]').forEach(el=> {
@@ -103,9 +113,16 @@ function sync() {
     el.classList.toggle('active',Number(state[prefix+'Width'])/Number(state[prefix+'Height'])===Number(el.dataset.w)/Number(el.dataset.h))
   })
 }
+let setupRevision = 0;
 function update() {
+  setupRevision++;
+  $('#fit-status').textContent = '';
+  // A manual-copy fallback must never look current after the setup changes.
+  $('#specs-fallback').hidden = true;
+  $('#specs-status').textContent = '';
   try {
     result=project(state);
+    digital=digitalProjection(state, result);
     renderResults();
     draw()
   }catch(e) {
@@ -116,10 +133,13 @@ function update() {
 document.querySelector('#controls').addEventListener('input',e=> {
   const el=e.target,key=el.dataset.key||el.dataset.range;
   if(!key)return;
-  if(key==='limitMode')state[key]=el.value;
+  setupRevision++;
+  $('#fit-status').textContent = '';
+  if(key==='digitalKeystone')state[key]=el.checked;
+  else if(key==='limitMode')state[key]=el.value;
   else {
     if(el.value===''||el.value==='-'||el.value==='.') {
-      if(key==='shiftLimitX'||key==='shiftLimitY')state[key]=null;
+      if(['shiftLimitX','shiftLimitY','throwMin','throwMax'].includes(key))state[key]=null;
       else return;
     } else {
       const n=Number(el.value);
@@ -157,9 +177,11 @@ function validate(obj) {
   for(const k of allowed) {
     if(!(k in obj))continue;
     let v=obj[k];
-    if(k==='limitMode') {
+    if(k==='digitalKeystone') {
+      if(typeof v!=='boolean')return null;
+    }else if(k==='limitMode') {
       if(!['none','independent','ellipse'].includes(v))return null
-    }else if((k==='shiftLimitX'||k==='shiftLimitY')&&v===null) {
+    }else if(['shiftLimitX','shiftLimitY','throwMin','throwMax'].includes(k)&&v===null) {
     }else if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>10000)return null;
     next[k]=v
   }
@@ -177,6 +199,7 @@ $('#save').onclick=()=> {
   }
 };
 $('#load').onclick=()=> {
+  $('#fit-status').textContent = '';
   try {
     let value=localStorage.getItem('projector-simulator-v1');
     let parsed=value&&validate(JSON.parse(value));
@@ -202,6 +225,105 @@ $('#share').onclick=async()=> {
     status('Could not copy the link; clipboard access may be unavailable.')
   }
 };
+// Yield once so the progress message is visible before the numerical solve.
+$('#auto-fit').addEventListener('click', async () => {
+  const button = $('#auto-fit');
+  const fitStatus = $('#fit-status');
+  const revision = setupRevision;
+  button.disabled = true;
+  fitStatus.textContent = 'Finding the best fit…';
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  try {
+    if (revision !== setupRevision) {
+      fitStatus.textContent = 'Setup changed; run auto-fit again.';
+      return;
+    }
+    const fit = autoFit(clone(state));
+    if (!fit || !fit.state || !Number.isFinite(fit.rmsError) || !Number.isFinite(fit.maxError)) {
+      fitStatus.textContent = fit?.message || 'Could not fit this setup. Check the input values.';
+      return;
+    }
+    const adjustable = ['throwRatio', 'shiftX', 'shiftY', 'yaw', 'pitch', 'roll'];
+    if (adjustable.some(key => !Number.isFinite(fit.state[key]))) {
+      throw new Error('Solver returned an invalid setting');
+    }
+    const candidate = { ...state };
+    for (const key of adjustable) candidate[key] = fit.state[key];
+    const candidateRaw = project(candidate);
+    if (!candidateRaw.valid || (candidate.digitalKeystone && !digitalProjection(candidate, candidateRaw).valid)) throw new Error('Solver returned an invalid projection');
+    state = candidate;
+    sync();
+    update();
+    const n = value => Number(value.toFixed(3));
+    const summary = `Throw ${n(state.throwRatio)}:1; shift H ${n(state.shiftX)}%, V ${n(state.shiftY)}%; aim yaw ${n(state.yaw)}°, pitch ${n(state.pitch)}°, roll ${n(state.roll)}°.`;
+    const targetLabel = state.digitalKeystone ? 'corrected native-aspect target' : 'screen';
+    const outcome = fit.exact ? `Exact fit to ${targetLabel} found (within 1 mm).` : `Best fit to ${targetLabel} found — RMS ${n(fit.rmsError * 100)} cm; maximum corner error ${n(fit.maxError * 100)} cm.`;
+    fitStatus.textContent = `${outcome} ${summary}${fit.message ? ` ${fit.message}` : ''}`;
+  } catch (error) {
+    console.error(error);
+    fitStatus.textContent = 'Auto-fit could not complete. The setup was not changed.';
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// Generate this on each click so it always reflects the current setup.
+function projectorSpecs(s, corrected) {
+  const number = value => Number(value.toFixed(4)).toString();
+  const signed = value => `${value >= 0 ? '+' : ''}${number(value)}%`;
+  const lines = [
+    'Current optical settings',
+    `Throw ratio: ${number(s.throwRatio)}:1`,
+    `Native aspect ratio: ${number(s.aspectWidth)}:${number(s.aspectHeight)}`,
+    `Horizontal adjustable lens shift: ${signed(s.shiftX)} of full image width (+right / -left)`,
+    `Vertical adjustable lens shift: ${signed(s.shiftY)} of full image height (+up / -down)`
+  ];
+  if (s.fixedOffsetY !== 0) {
+    lines.push(`Fixed vertical optical offset: ${signed(s.fixedOffsetY)} of full image height (+up / -down)`);
+  }
+  lines.push(
+    `Total vertical offset (adjustable shift + fixed offset): ${signed(s.shiftY + s.fixedOffsetY)} of full image height (+up / -down)`,
+    `Lens-to-wall distance: ${number(s.distance)} m`,
+    `Mechanical aim: yaw ${number(s.yaw)}°, pitch ${number(s.pitch)}°, roll ${number(s.roll)}°`,
+    `Digital keystone correction: ${s.digitalKeystone ? 'enabled' : 'disabled'}`
+  );
+  if (s.digitalKeystone) lines.push(
+    `Digital panel warp: horizontal ${number(corrected.maxHorizontalWarpPercent)}%, vertical ${number(corrected.maxVerticalWarpPercent)}% (maximum corner displacement)`,
+    `Panel area used: ${number(corrected.panelUsedPercent)}%; unused: ${number(corrected.unusedPanelPercent)}%`,
+    'Digital prewarp is an ideal model; actual device limits may differ.'
+  );
+  lines.push('Verify manufacturer percentage conventions and combined horizontal/vertical shift limits.');
+  return lines.join('\n');
+}
+
+$('#copy-specs').addEventListener('click', async () => {
+  const statusElement = $('#specs-status');
+  const fallback = $('#specs-fallback');
+  const textarea = $('#specs-text');
+  fallback.hidden = true;
+  if (!project(state).valid) {
+    statusElement.textContent = 'Cannot copy specs: please correct the invalid projection settings first.';
+    return;
+  }
+  const corrected = digitalProjection(state);
+  if (state.digitalKeystone && !corrected.valid) {
+    statusElement.textContent = `Cannot copy specs: ${corrected.errors.join(' ')}`;
+    return;
+  }
+  const text = projectorSpecs(state, corrected);
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    statusElement.textContent = 'Projector specs copied.';
+  } catch {
+    textarea.value = text;
+    fallback.hidden = false;
+    statusElement.textContent = 'Clipboard unavailable. Select and copy the settings below.';
+    textarea.focus();
+    textarea.select();
+  }
+});
+
 try {
   if(location.hash.startsWith('#setup=')) {
     let loaded=validate(JSON.parse(decodeURIComponent(location.hash.slice(7))));
@@ -214,7 +336,7 @@ try {
 const fmt=(x,d=2)=>Number.isFinite(x)?x.toFixed(d):'—';
 function renderResults() {
   let r=result;
-  let alerts=[...(r.errors||[]),...(r.warnings||[])];
+  let alerts=[...(r.errors||[]),...(r.warnings||[]),...(digital?.enabled ? [...digital.errors, ...digital.warnings] : [])];
   if(r.limitStatus?.message&&!r.limitStatus.within&&!alerts.includes(r.limitStatus.message))alerts.push(r.limitStatus.message);
   $('#warnings').innerHTML=alerts.map(a=>`<p>${String(a).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</p>`).join('');
   let n=r.nominal|| {
@@ -234,7 +356,7 @@ function renderResults() {
       </div>`).join('');
   let c=r.coverage|| {
   };
-  $('#coverage').innerHTML=[['Screen covered by image',c.screenPercent],['Image landing on screen',c.imagePercent]].map(([a,v])=>`<div class="coverage-item">
+  $('#coverage').innerHTML=[['Screen illuminated',c.screenPercent],['Light footprint on screen',c.imagePercent]].map(([a,v])=>`<div class="coverage-item">
       <div class="coverage-label">
       <span>${a}</span>
       <strong>${fmt(v,1)}%</strong>
@@ -249,6 +371,17 @@ function renderResults() {
       <td>${fmt(r.corners?.[i]?.[0])} m</td>
       <td>${fmt(r.corners?.[i]?.[1])} m</td>
       </tr>`).join('');
+  const digitalBox = $('#digital-results');
+  digitalBox.hidden = !state.digitalKeystone;
+  if (state.digitalKeystone) {
+    $('#digital-data').innerHTML = digital.valid ? [
+      ['Corrected image', `${fmt(digital.width)} × ${fmt(digital.height)} m`],
+      ['Screen covered', `${fmt(digital.screenCoveragePercent,1)}%`],
+      ['Panel area used / unused', `${fmt(digital.panelUsedPercent,1)}% / ${fmt(digital.unusedPanelPercent,1)}%`],
+      ['Maximum horizontal / vertical panel warp', `${fmt(digital.maxHorizontalWarpPercent,1)}% / ${fmt(digital.maxVerticalWarpPercent,1)}%`],
+      ['Mechanical yaw / pitch / roll', `${fmt(state.yaw,1)}° / ${fmt(state.pitch,1)}° / ${fmt(state.roll,1)}°`]
+    ].map(([label,value]) => `<div class="data-row"><span>${label}</span><strong>${value}</strong></div>`).join('') : '<p class="digital-error">No corrected rectangle can be shown for these settings. See the warning above.</p>';
+  }
   $('#scene-status').textContent=r.valid?'Ideal geometric projection':'Check setup values'
 }
 const canvas=$('#scene'),ctx=canvas.getContext('2d');
@@ -345,6 +478,16 @@ function draw() {
         let a=projectUV(state,t,-.5),b=projectUV(state,t,.5),c=projectUV(state,-.5,t),dd=projectUV(state,.5,t);
         if(a&&b)line(a,b,'#d57d5699',.8);
         if(c&&dd)line(c,dd,'#d57d5699',.8)
+      }
+    }
+    if (digital?.enabled && digital.valid) {
+      poly(digital.corners, '#795aa5', '#a580c733', 2);
+      const [tl,tr,br,bl] = digital.corners;
+      const interpolate = (a,b,t) => add(mul(a,1-t),mul(b,t));
+      for (let i=1; i<10; i++) {
+        const t=i/10;
+        line(interpolate(tl,tr,t),interpolate(bl,br,t),'#795aa599',.8);
+        line(interpolate(tl,bl,t),interpolate(tr,br,t),'#795aa599',.8);
       }
     }
     try {
